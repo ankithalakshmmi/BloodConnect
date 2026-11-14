@@ -46,7 +46,6 @@ def _require_current_eligibility(profile) -> None:
 
 def book_appointment(*, actor, slot_id, now=None) -> dict:
     require_camp_role(user=actor, action='book')
-    now = now or timezone.now()
     try:
         profile = DonorProfile.objects.get(user_id=actor.pk)
     except DonorProfile.DoesNotExist:
@@ -56,7 +55,9 @@ def book_appointment(*, actor, slot_id, now=None) -> dict:
         camp, slot = _lock_slot(slot_id)
         if slot.status != Slot.Status.OPEN or (camp is not None and camp.status != Camp.Status.ACTIVE):
             raise SlotUnavailable()
-        if slot.starts_at <= now:
+        # Read the clock only now, after every lock is held (Arya, 14 Nov): a request that waited
+        # on a lock must not succeed with a timestamp taken before the wait.
+        if slot.starts_at <= (now or timezone.now()):
             raise SlotUnavailable()
         _require_current_eligibility(profile)
         confirmed = Appointment.objects.filter(slot=slot, status=Appointment.Status.CONFIRMED)
@@ -91,7 +92,6 @@ def cancel_appointment(*, actor, appointment_id, now=None) -> dict:
     yet and no reminder state is claimed.
     """
     require_camp_role(user=actor, action='cancel_own')
-    now = now or timezone.now()
     try:
         profile = DonorProfile.objects.get(user_id=actor.pk)
         slot_id = Appointment.objects.values_list('slot_id', flat=True).get(
@@ -106,10 +106,12 @@ def cancel_appointment(*, actor, appointment_id, now=None) -> dict:
         except Appointment.DoesNotExist:
             raise NotFound() from None
         if appointment.status != Appointment.Status.CANCELLED:
-            if slot.starts_at <= now:
+            # Clock read after all locks are held, immediately before the start boundary check.
+            current = now or timezone.now()
+            if slot.starts_at <= current:
                 raise AppointmentNotCancellable()
             appointment.status = Appointment.Status.CANCELLED
-            appointment.cancelled_at = now
+            appointment.cancelled_at = current
             appointment.save(update_fields=['status', 'cancelled_at', 'updated_at'])
     appointment.slot = slot
     return appointment_dto(appointment)

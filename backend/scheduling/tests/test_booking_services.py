@@ -16,7 +16,8 @@ from scheduling.models import Appointment, Camp, Slot
 from scheduling.selectors.appointments import list_own_appointments
 from scheduling.services.appointments import book_appointment
 from scheduling.services.camps import update_camp
-from scheduling.tests.helpers import make_camp, make_donor, make_slot, make_user, save_result
+from scheduling.tests.helpers import (clock_after_lock, make_camp, make_donor, make_slot, make_user,
+                                      save_result)
 
 
 class BookAppointmentTests(TestCase):
@@ -105,6 +106,17 @@ class BookAppointmentTests(TestCase):
         with self.assertRaises(SlotUnavailable):
             self.book(now=self.slot.starts_at)
         self.assertEqual(Appointment.objects.count(), 0)
+
+    def test_the_start_check_uses_the_clock_read_after_the_locks(self):
+        # A request that waited on the lock across the slot's start must not succeed with a
+        # timestamp taken before the wait (Arya, 14 Nov).
+        start = self.slot.starts_at
+        with clock_after_lock(before=start - timedelta(seconds=1), after=start):
+            with self.assertRaises(SlotUnavailable):
+                self.book()
+        self.assertEqual(Appointment.objects.count(), 0)
+        with clock_after_lock(before=start - timedelta(hours=2), after=start - timedelta(hours=1)):
+            self.assertEqual(self.book()['status'], 'CONFIRMED')  # still before the start: fine
 
     def test_unknown_or_invalid_slot_is_not_found(self):
         for bad in ('00000000-0000-4000-8000-000000000009', 'not-a-uuid'):

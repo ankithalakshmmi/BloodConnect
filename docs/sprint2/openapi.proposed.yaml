@@ -1766,6 +1766,98 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /api/v1/appointments/{appointment_id}/cancel:
+    post:
+      operationId: cancelOwnAppointment
+      summary: Donor cancels their own confirmed appointment before its slot starts
+      tags:
+      - scheduling
+      x-owner: Ankitha Lakshmmi Mohan
+      x-stories:
+      - BB-21
+      x-requirements:
+      - FR-018
+      - FR-019
+      - SEC-002
+      x-contract-status: DECIDED_BY_ARYA_14_NOV_DRAFT_IMPLEMENTATION
+      x-implementation-status: not_implemented
+      x-allowed-roles:
+      - DONOR
+      x-draft-deviation: 'Pending reminders are NOT invalidated yet. Reminder invalidation
+        must happen in the same transaction as the cancellation once the notification
+        provider (PR #44) is integrated. A provider failure must roll the cancellation
+        back. Merge blocker.'
+      description: 'Implemented only in a draft PR (not on main). Request body is an empty JSON object; any field is rejected (400).
+        Only the authenticated donor''s own appointment: another donor''s appointment
+        and an unknown id both return the identical 404. Cancellation is allowed only
+        before the slot starts; at or after the start it is refused with 422 invalid_transition.
+        The clock is read after the slot and appointment rows are locked. Repeating
+        the call on an already cancelled appointment is harmless: it returns 200 with
+        the unchanged appointment (cancelled_at is not rewritten, even after the slot
+        has started) and capacity is never released twice. History is kept: the row
+        stays with status CANCELLED. Superusers, inactive users and non-donors are
+        denied (403). Lock order camp, slot, appointment.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: appointment_id
+        in: path
+        required: true
+        description: Canonical resource UUID
+        schema:
+          type: string
+          format: uuid
+      - name: X-CSRFToken
+        in: header
+        required: true
+        description: Existing same-origin CSRF token; bootstrap via GET /api/v1/auth/csrf
+        schema:
+          type: string
+          minLength: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '200':
+          description: Cancelled (or already cancelled, unchanged)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+        '400':
+          description: Invalid JSON or unexpected fields; nothing changed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: authentication_required or forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Unknown appointment or another donor's appointment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: invalid_transition, the slot has already started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Redacted storage/service unavailability
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/dashboard:
     get:
       operationId: getDashboard
@@ -2330,6 +2422,14 @@ components:
           - DELIVERED
           - FAILED
           - CANCELLED
+        cancelled_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Null while CONFIRMED; set once when cancelled and never rewritten.
+      x-draft-deviation: 'reminder_state is OMITTED from responses in the BB-21 draft
+        implementation until the notification provider (PR #44) is integrated. It is
+        never faked. Temporary deviation, see docs/sprint2/bb21-deviations.md.'
       required:
       - id
       - donor_id

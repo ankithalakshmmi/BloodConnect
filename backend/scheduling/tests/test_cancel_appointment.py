@@ -10,7 +10,7 @@ from rest_framework.exceptions import NotFound, PermissionDenied
 from scheduling.exceptions import AppointmentNotCancellable, CapacityConflict
 from scheduling.models import Appointment
 from scheduling.services.appointments import book_appointment, cancel_appointment
-from scheduling.tests.helpers import make_camp, make_donor, make_slot, make_user
+from scheduling.tests.helpers import clock_after_lock, make_camp, make_donor, make_slot, make_user
 
 
 def client_for(user):
@@ -61,6 +61,22 @@ class CancelServiceTests(TestCase):
                     self.cancel(now=now)
         self.assertEqual(Appointment.objects.get().status, 'CONFIRMED')
         self.assertEqual(self.cancel(now=self.slot.starts_at - timedelta(seconds=1))['status'], 'CANCELLED')
+
+    def test_the_start_check_uses_the_clock_read_after_the_locks(self):
+        start = self.slot.starts_at
+        with clock_after_lock(before=start - timedelta(seconds=1), after=start):
+            with self.assertRaises(AppointmentNotCancellable):
+                self.cancel()
+        row = Appointment.objects.get()
+        self.assertEqual((row.status, row.cancelled_at), ('CONFIRMED', None))
+        with clock_after_lock(before=start - timedelta(hours=2), after=start - timedelta(hours=1)):
+            self.assertEqual(self.cancel()['status'], 'CANCELLED')
+
+    def test_repeat_after_a_late_clock_stays_harmless(self):
+        start = self.slot.starts_at
+        self.cancel()
+        with clock_after_lock(before=start - timedelta(hours=1), after=start + timedelta(hours=1)):
+            self.assertEqual(self.cancel()['status'], 'CANCELLED')
 
     def test_repeating_a_cancel_after_start_stays_harmless(self):
         self.cancel()

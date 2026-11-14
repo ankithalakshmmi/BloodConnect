@@ -57,3 +57,29 @@ def make_slot(camp=None, **overrides):
                 ends_at=start + timedelta(hours=2), capacity=2)
     data.update(overrides)
     return Slot.objects.create(**data)
+
+
+from contextlib import contextmanager  # noqa: E402
+from unittest import mock  # noqa: E402
+
+
+@contextmanager
+def clock_after_lock(before, after):
+    """The clock reads `before` until the slot lock is acquired, then `after`.
+
+    Models a request that waited on the lock across the slot's start: a timestamp captured
+    BEFORE the lock (the old behaviour) sees `before`; one read AFTER the lock sees `after`.
+    """
+    from scheduling.services import appointments as service
+    state = {'locked': False}
+    real_lock = service._lock_slot
+
+    def lock(slot_id):
+        result = real_lock(slot_id)
+        state['locked'] = True
+        return result
+
+    with mock.patch.object(service, '_lock_slot', side_effect=lock), \
+            mock.patch.object(service.timezone, 'now',
+                              side_effect=lambda: after if state['locked'] else before):
+        yield
