@@ -63,3 +63,19 @@ class BookingRaceTests(TransactionTestCase):
         self.assertEqual([r[0] for r in results].count('ok'), 1, results)
         self.assertEqual([r for r in results if r[0] == 'crash'], [])
         self.assertEqual(Appointment.objects.count(), 1)
+
+
+@unittest.skipUnless(connection.vendor == 'postgresql', 'needs PostgreSQL row locking')
+class CancelRaceTests(TransactionTestCase):
+    def test_double_cancel_and_a_booking_race_never_overbook(self):
+        from scheduling.services.appointments import cancel_appointment
+        slot = make_slot(make_camp(capacity=10), capacity=1)
+        owner = make_donor()[0]
+        appt = book_appointment(actor=owner, slot_id=slot.id)
+        waiting = [make_donor()[0] for _ in range(4)]
+        jobs = [lambda: cancel_appointment(actor=owner, appointment_id=appt['id'])] * 3
+        jobs += [lambda d=d: book_appointment(actor=d, slot_id=slot.id) for d in waiting]
+        results = run_parallel(jobs)
+        self.assertEqual([r for r in results if r[0] == 'crash'], [])
+        self.assertLessEqual(Appointment.objects.filter(status='CONFIRMED').count(), 1)
+        self.assertEqual(Appointment.objects.get(pk=appt['id']).status, 'CANCELLED')

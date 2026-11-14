@@ -53,3 +53,7 @@ class AppointmentCreateInputSerializer(StrictInputSerializer):
 class AppointmentListInputSerializer(StrictInputSerializer):
     page = QueryIntegerField(min_value=1, default=1)
     page_size = QueryIntegerField(min_value=1, max_value=100, default=20)
+
+
+class AppointmentCancelInputSerializer(StrictInputSerializer):
+    """Cancel takes no body fields; anything sent is rejected."""

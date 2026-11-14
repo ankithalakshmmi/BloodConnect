@@ -19,6 +19,7 @@ CAMP_ACTION_ROLES = {
     'slot_list': frozenset({'DONOR', 'STAFF', 'ADMIN'}),
     'book': frozenset({'DONOR'}),
     'own_appointments': frozenset({'DONOR'}),
+    'cancel_own': frozenset({'DONOR'}),
 }
 
 

@@ -35,4 +35,5 @@ def appointment_dto(appointment) -> dict:
         'slot_id': str(appointment.slot_id),
         'scheduled_time': appointment.slot.starts_at.isoformat(),
         'status': appointment.status,
+        'cancelled_at': appointment.cancelled_at.isoformat() if appointment.cancelled_at else None,
     }

@@ -13,7 +13,7 @@ from core.errors import DecisionRequired
 from donors.eligibility_reader import read_saved_results
 from donors.models import DonorProfile
 from scheduling.dto import appointment_dto
-from scheduling.exceptions import (CapacityConflict, DuplicateBooking, IneligibleDonor,
+from scheduling.exceptions import (AppointmentNotCancellable, CapacityConflict, DuplicateBooking, IneligibleDonor,
                                    PolicyUnresolved, SlotUnavailable)
 from scheduling.models import Appointment, Camp, Slot
 from scheduling.permissions import require_camp_role
@@ -74,5 +74,42 @@ def book_appointment(*, actor, slot_id, now=None) -> dict:
                 appointment = Appointment.objects.create(donor=profile, slot=slot)
         except IntegrityError:
             raise DuplicateBooking() from None
+    appointment.slot = slot
+    return appointment_dto(appointment)
+
+
+def cancel_appointment(*, actor, appointment_id, now=None) -> dict:
+    """A donor cancels their OWN confirmed appointment before its slot starts.
+
+    Repeating the call is harmless: an already cancelled appointment is returned unchanged and
+    capacity is never released twice (capacity is counted from CONFIRMED rows only). History is
+    kept (status CANCELLED + cancelled_at). Someone else's appointment is indistinguishable from
+    an unknown id (404). Lock order camp -> slot -> appointment, same as booking.
+
+    INTEGRATION_PENDING: pending reminders must be invalidated in this same transaction. There is
+    no reminder provider on main (enqueue_intent is only in PR #44), so nothing is invalidated
+    yet and no reminder state is claimed.
+    """
+    require_camp_role(user=actor, action='cancel_own')
+    now = now or timezone.now()
+    try:
+        profile = DonorProfile.objects.get(user_id=actor.pk)
+        slot_id = Appointment.objects.values_list('slot_id', flat=True).get(
+            pk=appointment_id, donor=profile)
+    except (DonorProfile.DoesNotExist, Appointment.DoesNotExist, DjangoValidationError, ValueError):
+        raise NotFound() from None
+
+    with transaction.atomic():
+        _camp, slot = _lock_slot(slot_id)
+        try:
+            appointment = Appointment.objects.select_for_update().get(pk=appointment_id, donor=profile)
+        except Appointment.DoesNotExist:
+            raise NotFound() from None
+        if appointment.status != Appointment.Status.CANCELLED:
+            if slot.starts_at <= now:
+                raise AppointmentNotCancellable()
+            appointment.status = Appointment.Status.CANCELLED
+            appointment.cancelled_at = now
+            appointment.save(update_fields=['status', 'cancelled_at', 'updated_at'])
     appointment.slot = slot
     return appointment_dto(appointment)

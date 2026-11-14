@@ -44,3 +44,10 @@ class CampNotActive(APIException):
     status_code = 422
     default_code = 'invalid_transition'
     default_detail = 'A cancelled camp cannot receive new slots.'
+
+
+class AppointmentNotCancellable(APIException):
+    # Arya (14 Nov): a donor may cancel only before the slot starts.
+    status_code = 422
+    default_code = 'invalid_transition'
+    default_detail = 'An appointment cannot be cancelled once its slot has started.'
