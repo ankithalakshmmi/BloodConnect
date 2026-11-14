@@ -14,10 +14,14 @@ class RuleVersionCompatibilityTests(SimpleTestCase):
     def read(self, rules, saved_version='demo-2026-10-v1'):
         profile_id = uuid4()
         row = SimpleNamespace(pk=uuid4(), donor_id=profile_id, status='ELIGIBLE',
-            reason_codes=[], reasons=[], assessed_at=None, rules_version=saved_version)
+            reason_codes=[], reasons=[], assessed_at=None, rules_version=saved_version,
+            confirmed_collection_date=None)
         model = Mock()
         model.objects.filter.return_value.order_by.return_value = [row]
+        profiles = Mock()  # S2-10: the reader also reads the profile projection (none here)
+        profiles.objects.filter.return_value.values_list.return_value = []
         with patch('donors.eligibility_reader.apps.get_model', return_value=model), patch(
+                'donors.eligibility_reader.DonorProfile', profiles), patch(
                 'donors.eligibility_reader.approved_screening_rules', return_value=rules):
             return read_saved_results(donor_ids=[profile_id])[str(profile_id)]
     def test_pr40_rules_version_key(self):

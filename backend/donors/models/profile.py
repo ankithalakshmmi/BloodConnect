@@ -24,6 +24,10 @@ class DonorProfile(models.Model):
     mobile = models.CharField(max_length=16, unique=True)  # PROPOSED E.164, e.g. +919876543210
     blood_group = models.CharField(max_length=3, choices=BloodGroup.choices)
     location = models.CharField(max_length=120)
+    # Donors-owned projection (Arya, 14 Nov, S2-10): the latest CONFIRMED collection date.
+    # Written only by donors.services.collections.record_confirmed_collection, which inventory
+    # calls inside the same transaction as CollectionEvent and the first BloodUnit.
+    last_confirmed_collection_date = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
